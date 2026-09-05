@@ -5,6 +5,7 @@ import { useParams } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 
 import { api, ApiError, difficultyLabel, statusLabel } from "@/lib/api";
+import { formatJson } from "@/lib/formatJson";
 import type { Problem, Submission } from "@/lib/types";
 
 import { CodeEditor } from "./CodeEditor";
@@ -151,7 +152,7 @@ export function ProblemWorkspace() {
               {problem.public_cases.map((test) => (
                 <div className="example-box" key={test.name}>
                   <strong>{test.name}</strong>
-                  <pre><span>输入</span>{JSON.stringify(test.args, null, 2)}{"\n"}<span>输出</span>{JSON.stringify(test.expected)}</pre>
+                  <pre><span>输入</span>{formatJson(test.args)}{"\n"}<span>输出</span>{formatJson(test.expected)}</pre>
                 </div>
               ))}
             </section>

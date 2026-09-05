@@ -4,6 +4,8 @@ AI-ACM 是一个中文优先的“AI 算法版 LeetCode”MVP：任何已验证�
 
 项目已经包含两道可直接练习的种子题：从零实现 KNN 分类器、确定性 K-Means 聚类。
 
+![AI-ACM 首页：算法练习与 AI 出题入口](docs/images/homepage.png)
+
 ## 已实现
 
 - 公开题库、标签/难度/完成状态筛选、做题页和 Monaco Python 编辑器
@@ -12,6 +14,7 @@ AI-ACM 是一个中文优先的“AI 算法版 LeetCode”MVP：任何已验证�
 - 邮箱注册验证、HTTP-only 会话、个人训练档案与排行榜
 - 私有 PDF/DOCX/MD/TXT/PNG/JPG 上传、文本抽取/OCR、AI 结构化出题
 - 草稿编辑、参考答案/空实现/典型错解质量门禁、相似题提示、自助发布
+- AI 生成失败时携带上一版草稿与校验反馈自动修复；重试后仍未通过预检的结构合法草稿保留为待修订，发布仍须通过质量门禁
 - 举报、管理员下架与恢复 API
 - PostgreSQL、Redis/Celery、MinIO、Caddy 和隔离判题容器的 Compose 部署
 
@@ -86,4 +89,3 @@ npm run build
 ## 当前边界
 
 MVP 只支持 Python + 预注入 NumPy，不支持 sklearn、PyTorch、GPU、完整模型训练、比赛、讨论区和付费功能。发布后的判题版本不可覆盖；后续修改应创建新的不可变版本。
-

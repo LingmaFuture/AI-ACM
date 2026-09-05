@@ -1,6 +1,6 @@
 from typing import Any, Literal
 
-from pydantic import BaseModel, EmailStr, Field, field_validator
+from pydantic import BaseModel, EmailStr, Field, field_validator, model_validator
 
 
 class FunctionArg(BaseModel):
@@ -57,6 +57,46 @@ class ProblemDraftV1(BaseModel):
     def unique_tags(cls, value: list[str]) -> list[str]:
         return list(dict.fromkeys(tag.strip() for tag in value if tag.strip()))
 
+    @model_validator(mode="after")
+    def cases_match_function_spec(self) -> "ProblemDraftV1":
+        topic = " ".join([self.title, self.description, *self.tags]).lower()
+        is_clustering = any(
+            marker in topic for marker in ("聚类", "簇", "cluster", "k-means", "kmeans")
+        )
+        if self.checker.kind == "labels_equivalent" and not is_clustering:
+            raise ValueError("labels_equivalent 只能用于聚类标签题；普通数值题请使用 allclose")
+        required = {arg.name for arg in self.function_spec.args}
+        return_type = self.function_spec.return_type
+        for group_name, cases in (
+            ("public_cases", self.public_cases),
+            ("hidden_cases", self.hidden_cases),
+        ):
+            for index, case in enumerate(cases):
+                missing = sorted(required - set(case.args))
+                if missing:
+                    raise ValueError(
+                        f"{group_name}.{index}.args 缺少函数参数：{', '.join(missing)}"
+                    )
+                unexpected = sorted(set(case.args) - required)
+                if unexpected:
+                    raise ValueError(
+                        f"{group_name}.{index}.args 包含未知参数：{', '.join(unexpected)}"
+                    )
+                expected = case.expected
+                valid_expected = {
+                    "int": isinstance(expected, int) and not isinstance(expected, bool),
+                    "float": isinstance(expected, (int, float)) and not isinstance(expected, bool),
+                    "str": isinstance(expected, str),
+                    "bool": isinstance(expected, bool),
+                    "list": isinstance(expected, list),
+                    "ndarray": isinstance(expected, list),
+                }[return_type]
+                if not valid_expected:
+                    raise ValueError(
+                        f"{group_name}.{index}.expected 与返回类型 {return_type} 不一致"
+                    )
+        return self
+
 
 class RegisterRequest(BaseModel):
     email: EmailStr
@@ -85,4 +125,3 @@ class ReportRequest(BaseModel):
 
 class ModerationRequest(BaseModel):
     reason: str = Field(min_length=3, max_length=1000)
-

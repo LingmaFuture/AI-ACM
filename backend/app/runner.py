@@ -23,6 +23,20 @@ class OutputLimitError(RuntimeError):
     pass
 
 
+class SafeImportStripper(ast.NodeTransformer):
+    """Remove the one redundant import supported by the sandbox.
+
+    NumPy is injected into the execution scope as ``np``. Models commonly
+    emit ``import numpy as np`` anyway; dropping that exact statement avoids
+    exposing Python's import machinery to submitted code.
+    """
+
+    def visit_Import(self, node: ast.Import) -> ast.AST | None:
+        if len(node.names) == 1 and node.names[0].name == "numpy" and node.names[0].asname == "np":
+            return None
+        return node
+
+
 FORBIDDEN_NAMES = {
     "open",
     "exec",
@@ -44,10 +58,16 @@ FORBIDDEN_NAMES = {
 
 class PolicyVisitor(ast.NodeVisitor):
     def visit_Import(self, node: ast.Import) -> None:
-        raise PolicyError("无需 import；NumPy 已通过 np 提供")
+        raise PolicyError(
+            f"第 {node.lineno} 行不允许导入：{ast.unparse(node)}；NumPy 已通过 np 提供，"
+            "请移除该导入并改用 np.exp、np.log、np.sqrt 等函数或 Python 内置函数"
+        )
 
     def visit_ImportFrom(self, node: ast.ImportFrom) -> None:
-        raise PolicyError("不允许导入模块；NumPy 已通过 np 提供")
+        raise PolicyError(
+            f"第 {node.lineno} 行不允许导入：{ast.unparse(node)}；NumPy 已通过 np 提供，"
+            "请移除该导入并改用 np.exp、np.log、np.sqrt 等函数或 Python 内置函数"
+        )
 
     def visit_Name(self, node: ast.Name) -> None:
         if node.id in FORBIDDEN_NAMES or "__" in node.id:
@@ -114,6 +134,8 @@ def validate_source(source: str) -> ast.Module:
         tree = ast.parse(source, mode="exec")
     except SyntaxError as exc:
         raise PolicyError(f"语法错误：第 {exc.lineno} 行 {exc.msg}") from exc
+    tree = SafeImportStripper().visit(tree)
+    ast.fix_missing_locations(tree)
     PolicyVisitor().visit(tree)
     return tree
 
@@ -232,8 +254,12 @@ def execute(payload: dict) -> dict:
         with contextlib.redirect_stdout(output), contextlib.redirect_stderr(output), deadline(timeout):
             exec(compile(tree, "<submission>", "exec"), scope)
         solution_class = scope.get(function_spec.get("class_name", "Solution"))
-        if not isinstance(solution_class, type):
-            raise PolicyError("必须定义 Solution 类")
+        solution_function = scope.get(function_spec["method_name"])
+        if not isinstance(solution_class, type) and not callable(solution_function):
+            raise PolicyError(
+                f"必须定义 {function_spec.get('class_name', 'Solution')} 类或 "
+                f"{function_spec['method_name']} 函数"
+            )
     except ExecutionTimeout:
         return {"status": "time_limit", "passed": 0, "total": len(tests), "cases": []}
     except (PolicyError, OutputLimitError) as exc:
@@ -257,8 +283,11 @@ def execute(payload: dict) -> dict:
     for test in tests:
         started = time.perf_counter()
         try:
-            instance = solution_class()
-            method = getattr(instance, function_spec["method_name"], None)
+            if isinstance(solution_class, type):
+                instance = solution_class()
+                method = getattr(instance, function_spec["method_name"], None)
+            else:
+                method = solution_function
             if not callable(method):
                 raise AttributeError(f"缺少方法 {function_spec['method_name']}")
             output = LimitedWriter(output_limit)
@@ -324,4 +353,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

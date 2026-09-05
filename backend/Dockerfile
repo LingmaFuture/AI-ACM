@@ -5,7 +5,8 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PIP_NO_CACHE_DIR=1
 
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends docker.io tesseract-ocr tesseract-ocr-chi-sim \
+    && apt-get install -y --no-install-recommends docker-cli tesseract-ocr tesseract-ocr-chi-sim \
+    && docker --version \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
@@ -15,4 +16,3 @@ RUN pip install .
 
 EXPOSE 8000
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
-

@@ -8,10 +8,12 @@ import pytest
 test_root = Path(tempfile.mkdtemp(prefix="aiacm-tests-"))
 os.environ["DATABASE_URL"] = f"sqlite:///{test_root / 'test.sqlite3'}"
 os.environ["LOCAL_STORAGE_PATH"] = str(test_root / "uploads")
+os.environ["STORAGE_BACKEND"] = "local"
 os.environ["ENVIRONMENT"] = "development"
 os.environ["SYNC_TASKS"] = "true"
 os.environ["JUDGE_MODE"] = "local"
 os.environ["SECRET_KEY"] = "test-secret-key"
+os.environ["AI_API_KEY"] = ""
 
 from app.database import Base, SessionLocal, engine  # noqa: E402
 from app.main import app  # noqa: E402
@@ -59,4 +61,3 @@ async def create_verified_user(client: httpx.AsyncClient, suffix: str):
     )
     assert login.status_code == 200, login.text
     return login.json()["user"]
-

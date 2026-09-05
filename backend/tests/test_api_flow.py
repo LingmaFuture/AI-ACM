@@ -1,7 +1,11 @@
+import copy
 from uuid import uuid4
 
 import httpx
 import pytest
+
+from app import generator
+from app.seed_data import KNN_DRAFT
 
 from .conftest import create_verified_user
 
@@ -114,3 +118,71 @@ async def test_upload_generate_validate_and_publish(client: httpx.AsyncClient):
     assert outsider["id"] != owner["id"]
     forbidden = await client.get(f"/api/v1/drafts/{draft_id}")
     assert forbidden.status_code == 403
+
+
+@pytest.mark.anyio
+async def test_generation_preserves_failed_precheck_as_private_editable_draft(client, monkeypatch):
+    await create_verified_user(client, uuid4().hex[:8])
+    payload = copy.deepcopy(KNN_DRAFT)
+    payload["mutants"][1] = payload["reference_solution"]
+    requests = []
+
+    def fake_post(url, **kwargs):
+        requests.append(kwargs["json"])
+        return httpx.Response(
+            200,
+            request=httpx.Request("POST", url),
+            json={"choices": [{"message": {"content": generator.json.dumps(payload)}}]},
+        )
+
+    monkeypatch.setattr(generator.settings, "ai_api_key", "test-key")
+    monkeypatch.setattr(generator.httpx, "post", fake_post)
+    content = (
+        "KNN 算法资料：按欧氏距离选取最近的 k 个邻居，多数投票分类，平票选较小标签。"
+    ).encode()
+    uploaded = await client.post(
+        "/api/v1/uploads",
+        files={"file": ("knn-repair.txt", content, "text/plain")},
+    )
+    assert uploaded.status_code == 201, uploaded.text
+    generation = await client.post(f"/api/v1/uploads/{uploaded.json()['id']}/generate")
+    assert generation.status_code == 202, generation.text
+    job = (await client.get(f"/api/v1/jobs/{generation.json()['job_id']}")).json()
+    assert len(requests) == generator.MAX_GENERATION_ATTEMPTS
+    assert job["status"] == "completed", job
+    assert job["error"] is None
+    draft_id = job["draft_id"]
+    draft = (await client.get(f"/api/v1/drafts/{draft_id}")).json()
+    assert draft["status"] == "needs_revision"
+    assert draft["validation_report"]["passed"] is False
+    assert "错误实现 2" in draft["validation_report"]["checks"][0]["message"]
+    assert draft["payload"]["mutants"][1] == payload["reference_solution"]
+    assert draft["published_problem_id"] is None
+
+    # Attesting rights and rerunning validation must not bypass the failing mutant.
+    saved = await client.patch(
+        f"/api/v1/drafts/{draft_id}",
+        json={"payload": draft["payload"], "rights_attested": True},
+    )
+    assert saved.status_code == 200, saved.text
+    validation = await client.post(f"/api/v1/drafts/{draft_id}/validate")
+    assert validation.status_code == 202, validation.text
+    failed = (await client.get(f"/api/v1/jobs/{validation.json()['job_id']}")).json()
+    assert failed["result"]["passed"] is False
+    publish = await client.post(f"/api/v1/drafts/{draft_id}/publish")
+    assert publish.status_code == 400
+    assert "尚未通过自动质量门禁" in publish.text
+
+    # Repairing the mutant allows the ordinary quality gate and publishing flow.
+    draft["payload"]["mutants"] = KNN_DRAFT["mutants"]
+    repaired = await client.patch(
+        f"/api/v1/drafts/{draft_id}",
+        json={"payload": draft["payload"], "rights_attested": True},
+    )
+    assert repaired.status_code == 200, repaired.text
+    validation = await client.post(f"/api/v1/drafts/{draft_id}/validate")
+    assert validation.status_code == 202, validation.text
+    passed = (await client.get(f"/api/v1/jobs/{validation.json()['job_id']}")).json()
+    assert passed["result"]["passed"] is True
+    publish = await client.post(f"/api/v1/drafts/{draft_id}/publish")
+    assert publish.status_code == 201, publish.text

@@ -6,6 +6,7 @@ import { useParams, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 
 import { api } from "@/lib/api";
+import { formatJson } from "@/lib/formatJson";
 import type { Draft, ProblemDraftPayload } from "@/lib/types";
 
 export function DraftEditor() {
@@ -21,7 +22,7 @@ export function DraftEditor() {
   async function load() {
     try {
       const data = await api<Draft>(`/drafts/${params.id}`);
-      setDraft(data); setJsonText(JSON.stringify(data.payload, null, 2)); setRights(data.rights_attested);
+      setDraft(data); setJsonText(formatJson(data.payload)); setRights(data.rights_attested);
     } catch (caught) { setError(caught instanceof Error ? caught.message : "草稿加载失败"); }
   }
   useEffect(() => { void load(); }, [params.id]);
@@ -112,4 +113,3 @@ export function DraftEditor() {
     </div>
   );
 }
-
